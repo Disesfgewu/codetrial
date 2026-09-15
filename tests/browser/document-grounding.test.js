@@ -24,6 +24,15 @@ test("rejects unsupported, spoofed, empty, oversized, and invalid UTF-8 files", 
   }
 });
 
+test("single-character skills like C and R survive extraction", async () => {
+  // unique() used to filter tokens shorter than two characters, which was meant
+  // to drop stray punctuation left over from a bad split but also silently
+  // dropped one-letter language names -- exactly the ones a systems-programming
+  // resume is most likely to list.
+  const resume = await parseGroundingFile(txt("Skills: C, Go, Python, R, Rust"), "resume");
+  assert.deepEqual(resume.skills, ["C", "Go", "Python", "R", "Rust"]);
+});
+
 test("selection requires consent and storage is one-time", () => {
   const extracted = { requirements: ["Must know Rust"], skills: ["Rust"], anchors: ["Built a parser"] };
   const selected = { requirements: [0], skills: [], anchors: [0] };

@@ -120,7 +120,7 @@ function clean(line) {
 }
 
 function unique(values, max) {
-  return [...new Set(values.map(clean).filter((value) => value.length >= 2))].slice(0, max);
+  return [...new Set(values.map(clean).filter(Boolean))].slice(0, max);
 }
 
 function parseJd(lines) {
