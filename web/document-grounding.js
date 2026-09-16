@@ -121,14 +121,14 @@ function normalizeLines(text) {
 // and standards spell themselves: "5G", "3D", "802.11" are not "5", "3", and
 // "802" with a stray marker in front.
 function clean(line) {
-  return line.replace(/^(?:(?:[-*•]|\d+[.)])\s+)+/, "").slice(0, textLimit).trim();
+  return line.trimStart().replace(/^(?:(?:[-*]|\d+[.)])\s+|•\s*)+/, "").slice(0, textLimit).trim();
 }
 
 // A token surviving as nothing but punctuation is what's left of a bad split
 // (a stray delimiter, an orphaned symbol), not a candidate anyone meant to
 // list -- keep only values with at least one letter or digit.
 function unique(values, max) {
-  return [...new Set(values.map(clean).filter((value) => /[\p{L}\p{N}]/u.test(value)))].slice(0, max);
+  return [...new Set(values.map(clean).filter((value) => /\p{L}|\p{N}.*\p{N}/u.test(value)))].slice(0, max);
 }
 
 function parseJd(lines) {
