@@ -115,12 +115,20 @@ function normalizeLines(text) {
     .split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
 
+// Only a real list marker -- a bullet glyph, or digits immediately followed by
+// "." or ")" -- and then whitespace counts as a prefix to strip. A bare
+// leading digit run does not, because that is also how alphanumeric skills
+// and standards spell themselves: "5G", "3D", "802.11" are not "5", "3", and
+// "802" with a stray marker in front.
 function clean(line) {
-  return line.replace(/^[-*•\d.)\s]+/, "").slice(0, textLimit).trim();
+  return line.replace(/^(?:(?:[-*•]|\d+[.)])\s+)+/, "").slice(0, textLimit).trim();
 }
 
+// A token surviving as nothing but punctuation is what's left of a bad split
+// (a stray delimiter, an orphaned symbol), not a candidate anyone meant to
+// list -- keep only values with at least one letter or digit.
 function unique(values, max) {
-  return [...new Set(values.map(clean).filter(Boolean))].slice(0, max);
+  return [...new Set(values.map(clean).filter((value) => /[\p{L}\p{N}]/u.test(value)))].slice(0, max);
 }
 
 function parseJd(lines) {

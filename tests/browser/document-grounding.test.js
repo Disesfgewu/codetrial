@@ -33,6 +33,27 @@ test("single-character skills like C and R survive extraction", async () => {
   assert.deepEqual(resume.skills, ["C", "Go", "Python", "R", "Rust"]);
 });
 
+test("digit-led skills are not mistaken for a numbered-list marker", async () => {
+  // clean()'s leading-marker strip is meant for real list prefixes like "1. "
+  // or "2) ", not for a bare digit run: without the "then punctuation" check,
+  // "5G" loses its "5" and survives as the fabricated skill "G".
+  const resume = await parseGroundingFile(txt("Skills: C, 5G, 3D, 4K, 802.11"), "resume");
+  assert.deepEqual(resume.skills, ["C", "5G", "3D", "4K", "802.11"]);
+});
+
+test("a numbered-list marker is still stripped from a requirement line", async () => {
+  const jd = await parseGroundingFile(txt("1. Must know Rust\n2) Should know Go"), "jd");
+  assert.deepEqual(jd.requirements, ["Must know Rust", "Should know Go"]);
+});
+
+test("a split fragment that is pure punctuation is dropped, not kept as a skill", async () => {
+  // A stray delimiter or copy-paste artifact landing as its own comma/semicolon
+  // fragment must not survive filter(Boolean) just because clean() doesn't
+  // happen to strip that particular symbol.
+  const resume = await parseGroundingFile(txt("Skills: C, /, Go, #, &, Java"), "resume");
+  assert.deepEqual(resume.skills, ["C", "Go", "Java"]);
+});
+
 test("selection requires consent and storage is one-time", () => {
   const extracted = { requirements: ["Must know Rust"], skills: ["Rust"], anchors: ["Built a parser"] };
   const selected = { requirements: [0], skills: [], anchors: [0] };
