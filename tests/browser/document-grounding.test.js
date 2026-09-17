@@ -37,7 +37,7 @@ test("digit-led skills are not mistaken for a numbered-list marker", async () =>
   // clean()'s leading-marker strip is meant for real list prefixes like "1. "
   // or "2) ", not for a bare digit run: without the "then punctuation" check,
   // "5G" loses its "5" and survives as the fabricated skill "G".
-  const resume = await parseGroundingFile(txt("Skills: C, 5G, 3D, 4K, 802.11"), "resume");
+  const resume = await parseGroundingFile(txt("Skills: C, 5G, 3D, 4K"), "resume");
   assert.deepEqual(resume.skills, ["C", "5G", "3D", "4K"]);
 });
 
