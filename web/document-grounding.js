@@ -118,17 +118,32 @@ function normalizeLines(text) {
 // Only a real list marker -- a bullet glyph, or digits immediately followed by
 // "." or ")" -- and then whitespace counts as a prefix to strip. A bare
 // leading digit run does not, because that is also how alphanumeric skills
-// and standards spell themselves: "5G", "3D", "802.11" are not "5", "3", and
-// "802" with a stray marker in front.
+// spell themselves: "5G" and "3D" are not "5" and "3" with a stray marker in
+// front.
 function clean(line) {
   return line.trimStart().replace(/^(?:(?:[-*]|\d+[.)])\s+|•\s*)+/, "").slice(0, textLimit).trim();
 }
 
-// A token surviving as nothing but punctuation is what's left of a bad split
-// (a stray delimiter, an orphaned symbol), not a candidate anyone meant to
-// list -- keep only values with at least one letter or digit.
+// A token with no letter is a number, or nothing but punctuation, wearing a
+// list item's clothes -- and different shapes of number end up there for
+// different reasons, only some of which are safe to keep.
+//
+// A bare "digit.digit" run ("3.14", "5.2", "802.11") can't be told apart from
+// a GPA or a version fragment left behind when "Python 3.14" or "802.11ac"
+// got split on whitespace or a stray "ac" -- so that shape is always dropped,
+// standard number or not. A digit paired with "/" or "%" ("24/7", "100%") has
+// no such ambiguous split reading and survives, same as a plain digit run
+// with no dot ("9001", "27001") or a letter-bearing token ("5G", "4K"). A bare
+// symbol with no digit at all ("/", "#") is a stray delimiter, not a token
+// anyone meant to list, and a lone digit ("1", "-5") still has none of the
+// above shapes' excuse -- both are dropped.
 function unique(values, max) {
-  return [...new Set(values.map(clean).filter((value) => /\p{L}|\p{N}.*\p{N}/u.test(value)))].slice(0, max);
+  return [...new Set(values.map(clean).filter((value) => {
+    if (/\p{L}/u.test(value)) return true;
+    if (/^\d+(\.\d+)+$/.test(value)) return false;
+    if (/\p{N}/u.test(value) && /[/%]/.test(value)) return true;
+    return /\p{N}.*\p{N}/u.test(value);
+  }))].slice(0, max);
 }
 
 function parseJd(lines) {

@@ -38,7 +38,7 @@ test("digit-led skills are not mistaken for a numbered-list marker", async () =>
   // or "2) ", not for a bare digit run: without the "then punctuation" check,
   // "5G" loses its "5" and survives as the fabricated skill "G".
   const resume = await parseGroundingFile(txt("Skills: C, 5G, 3D, 4K, 802.11"), "resume");
-  assert.deepEqual(resume.skills, ["C", "5G", "3D", "4K", "802.11"]);
+  assert.deepEqual(resume.skills, ["C", "5G", "3D", "4K"]);
 });
 
 test("a numbered-list marker is still stripped from a requirement line", async () => {
@@ -52,6 +52,77 @@ test("a split fragment that is pure punctuation is dropped, not kept as a skill"
   // happen to strip that particular symbol.
   const resume = await parseGroundingFile(txt("Skills: C, /, Go, #, &, Java"), "resume");
   assert.deepEqual(resume.skills, ["C", "Go", "Java"]);
+});
+
+test("lone numeric fragments are not kept as skills", async () => {
+  const resume = await parseGroundingFile(txt("Skills: Python, 1, 1., Rust"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Rust"]);
+});
+
+test("a single isolated skill with no delimiter still survives extraction", async () => {
+  const resume = await parseGroundingFile(txt("Skills: Python"), "resume");
+  assert.deepEqual(resume.skills, ["Python"]);
+});
+
+test("a skills header missing its colon is not treated as a skills line", async () => {
+  // parseResume only recognizes "skills/technologies/stack" followed by ":",
+  // so a header that drops the colon must yield no skills at all rather than
+  // matching loosely on the leading word.
+  const resume = await parseGroundingFile(txt("Skills Python, Go"), "resume");
+  assert.deepEqual(resume.skills, []);
+});
+
+test("header casing, synonyms, and stray whitespace around the colon are tolerated", async () => {
+  const resume = await parseGroundingFile(txt("TECHNOLOGIES   :   Python, Go"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Go"]);
+});
+
+test("empty segments from doubled-up delimiters are dropped, not kept as blank skills", async () => {
+  const resume = await parseGroundingFile(txt("Skills: Python,, Go;;Rust||C++"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Go", "Rust", "C++"]);
+});
+
+test("a letter or a slash or percent lets a digit-bearing token survive", async () => {
+  const resume = await parseGroundingFile(txt("Skills: C++11, 24/7, 100%, v2, 5, -5"), "resume");
+  assert.deepEqual(resume.skills, ["C++11", "24/7", "100%", "v2"]);
+});
+
+test("a bare digit.digit shape is dropped as an orphaned version or GPA fragment", async () => {
+  // "3.14", "5.2", and "802.11" can't be told apart from a GPA or a version
+  // number split off its software name -- there is no letter or symbol left
+  // to say which one it is, so the whole shape is dropped, standard or not.
+  const resume = await parseGroundingFile(txt("Skills: Python, 3.14, 5.2, 802.11, Go"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Go"]);
+});
+
+test("a bare multi-digit integer is not treated the same as a digit.digit fragment", async () => {
+  // Unlike "3.14", a plain digit run has no dot to make it read as a split
+  // version number or GPA, so it keeps surviving the way it always has.
+  const resume = await parseGroundingFile(txt("Skills: ISO 9001, 27001, 2015"), "resume");
+  assert.deepEqual(resume.skills, ["ISO 9001", "27001", "2015"]);
+});
+
+test("a generation suffix or org prefix carries a standard's number through", async () => {
+  // Real-world listings almost always attach a generation letter ("ac", "ax")
+  // or an org name ("IEEE", "Wi-Fi") to a standard's number, which is exactly
+  // what keeps it out of the ambiguous bare digit.digit shape.
+  const resume = await parseGroundingFile(txt("Skills: 802.11ac, 802.11ax, IEEE 802.11, Wi-Fi 802.11"), "resume");
+  assert.deepEqual(resume.skills, ["802.11ac", "802.11ax", "IEEE 802.11", "Wi-Fi 802.11"]);
+});
+
+test("a standard survives named but not as its bare dotted number", async () => {
+  // "IEEE 754" and "ISO 27001" keep their org name, so the letter carries
+  // them through same as any other skill. A bare "754" split off its name is
+  // still just a plain digit run and survives on its own, but "802.3" is a
+  // digit.digit shape -- the same ambiguity that drops "802.11" and "3.14" --
+  // so it is dropped even though it is a real Ethernet standard.
+  const resume = await parseGroundingFile(txt("Skills: IEEE 754, ISO 27001, IEEE, 754, 802.3"), "resume");
+  assert.deepEqual(resume.skills, ["IEEE 754", "ISO 27001", "IEEE", "754"]);
+});
+
+test("stacked list markers on one line are stripped in full, not just the first", async () => {
+  const jd = await parseGroundingFile(txt("1. - Must know Rust\n* 2) Should know Go"), "jd");
+  assert.deepEqual(jd.requirements, ["Must know Rust", "Should know Go"]);
 });
 
 test("selection requires consent and storage is one-time", () => {
