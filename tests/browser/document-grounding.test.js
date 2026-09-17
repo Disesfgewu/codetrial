@@ -24,6 +24,142 @@ test("rejects unsupported, spoofed, empty, oversized, and invalid UTF-8 files", 
   }
 });
 
+test("single-character skills like C and R survive extraction", async () => {
+  // unique() used to filter tokens shorter than two characters, which was meant
+  // to drop stray punctuation left over from a bad split but also silently
+  // dropped one-letter language names -- exactly the ones a systems-programming
+  // resume is most likely to list.
+  const resume = await parseGroundingFile(txt("Skills: C, Go, Python, R, Rust"), "resume");
+  assert.deepEqual(resume.skills, ["C", "Go", "Python", "R", "Rust"]);
+});
+
+test("digit-led skills are not mistaken for a numbered-list marker", async () => {
+  // clean()'s leading-marker strip is meant for real list prefixes like "1. "
+  // or "2) ", not for a bare digit run: without the "then punctuation" check,
+  // "5G" loses its "5" and survives as the fabricated skill "G".
+  const resume = await parseGroundingFile(txt("Skills: C, 5G, 3D, 4K"), "resume");
+  assert.deepEqual(resume.skills, ["C", "5G", "3D", "4K"]);
+});
+
+test("a numbered-list marker is still stripped from a requirement line", async () => {
+  const jd = await parseGroundingFile(txt("1. Must know Rust\n2) Should know Go"), "jd");
+  assert.deepEqual(jd.requirements, ["Must know Rust", "Should know Go"]);
+});
+
+test("a split fragment that is pure punctuation is dropped, not kept as a skill", async () => {
+  // A stray delimiter or copy-paste artifact landing as its own comma/semicolon
+  // fragment must not survive filter(Boolean) just because clean() doesn't
+  // happen to strip that particular symbol.
+  const resume = await parseGroundingFile(txt("Skills: C, /, Go, #, &, Java"), "resume");
+  assert.deepEqual(resume.skills, ["C", "Go", "Java"]);
+});
+
+test("lone numeric fragments are not kept as skills", async () => {
+  const resume = await parseGroundingFile(txt("Skills: Python, 1, 1., Rust"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Rust"]);
+});
+
+test("a single isolated skill with no delimiter still survives extraction", async () => {
+  const resume = await parseGroundingFile(txt("Skills: Python"), "resume");
+  assert.deepEqual(resume.skills, ["Python"]);
+});
+
+test("a skills header missing its colon is not treated as a skills line", async () => {
+  // parseResume only recognizes "skills/technologies/stack" followed by ":",
+  // so a header that drops the colon must yield no skills at all rather than
+  // matching loosely on the leading word.
+  const resume = await parseGroundingFile(txt("Skills Python, Go"), "resume");
+  assert.deepEqual(resume.skills, []);
+});
+
+test("header casing, synonyms, and stray whitespace around the colon are tolerated", async () => {
+  const resume = await parseGroundingFile(txt("TECHNOLOGIES   :   Python, Go"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Go"]);
+});
+
+test("empty segments from doubled-up delimiters are dropped, not kept as blank skills", async () => {
+  const resume = await parseGroundingFile(txt("Skills: Python,, Go;;Rust||C++"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Go", "Rust", "C++"]);
+});
+
+test("a letter or a slash or percent lets a digit-bearing token survive", async () => {
+  const resume = await parseGroundingFile(txt("Skills: C++11, 24/7, 100%, v2, 5, -5"), "resume");
+  assert.deepEqual(resume.skills, ["C++11", "24/7", "100%", "v2"]);
+});
+
+test("a bare digit.digit shape is dropped as an orphaned version or GPA fragment", async () => {
+  // "3.14", "5.2", and "802.11" can't be told apart from a GPA or a version
+  // number split off its software name -- there is no letter left to say
+  // which one it is, so the whole shape is dropped, standard or not.
+  const resume = await parseGroundingFile(txt("Skills: Python, 3.14, 5.2, 802.11, Go"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Go"]);
+});
+
+test("a bare multi-digit integer gets no special treatment either", async () => {
+  // A plain digit run has no dot to make it read as a split version number
+  // or GPA, but that shape isn't what decides this: parseResume only splits
+  // candidates on "," / ";" / "|", so "ISO 27001, 124141, 2015" always comes
+  // from one shared "ISO" prefix in front of several values, and once split,
+  // there is no way left to tell whether "124141" is still part of that
+  // standard, a separate one, or "2015" is a year with nothing to do with
+  // either. Without a letter to carry a value's scope through the split, a
+  // bare number carries none of its own -- so "27001" and "2015" are dropped
+  // exactly like "3.14" is, and only "ISO 9001" keeps its meaning.
+  const resume = await parseGroundingFile(txt("Skills: ISO 9001, 27001, 2015"), "resume");
+  assert.deepEqual(resume.skills, ["ISO 9001"]);
+});
+
+test("a generation suffix or org prefix carries a standard's number through", async () => {
+  // Real-world listings almost always attach a generation letter ("ac", "ax")
+  // or an org name ("IEEE", "Wi-Fi") to a standard's number, which is exactly
+  // the letter that lets it survive as its own token.
+  const resume = await parseGroundingFile(txt("Skills: 802.11ac, 802.11ax, IEEE 802.11, Wi-Fi 802.11"), "resume");
+  assert.deepEqual(resume.skills, ["802.11ac", "802.11ax", "IEEE 802.11", "Wi-Fi 802.11"]);
+});
+
+test("a standard survives named but not split off as a bare number", async () => {
+  // "IEEE 754" and "ISO 27001" keep their org name, so the letter carries
+  // them through same as any other skill. Once "754" is split off from
+  // "IEEE" it is just a bare digit run with no letter left to scope it, and
+  // is dropped the same way "802.3" is -- both are real standards, but
+  // neither token carries anything to say so on its own.
+  const resume = await parseGroundingFile(txt("Skills: IEEE 754, ISO 27001, IEEE, 754, 802.3"), "resume");
+  assert.deepEqual(resume.skills, ["IEEE 754", "ISO 27001", "IEEE"]);
+});
+
+test("a non-ASCII decimal digit dotted fragment is dropped like its ASCII equivalent", async () => {
+  // \p{N} covers any numeral script, not just ASCII 0-9, so a GPA or version
+  // fragment spelled in full-width or Arabic-Indic digits carries no letter
+  // either and is dropped the same way "3.14" is.
+  const resume = await parseGroundingFile(txt("Skills: Python, ３.１４, ٣.١٤, Go"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Go"]);
+});
+
+test("digits elsewhere in a token do not earn it a letter's exemption", async () => {
+  // None of these carry a letter or a "/" or "%", so none of them get to
+  // survive as a negative number, a parenthesized GPA, a digit range, or a
+  // year range -- the same rule that drops a bare "27001" drops these too.
+  const resume = await parseGroundingFile(txt("Skills: Python, -50, (3.14), 1-2, 2020-2024, Rust"), "resume");
+  assert.deepEqual(resume.skills, ["Python", "Rust"]);
+});
+
+test("a shared prefix does not carry over to the values after it", async () => {
+  // ISO does not scope "124141" or "2015" just because it appeared earlier
+  // on the line -- parseResume splits Skills: ISO 27001, 124141, ISO 8981,
+  // 2015 into four independent candidates, and each one is judged only on
+  // what it itself carries. "ISO 27001" and "ISO 8981" keep their own "ISO",
+  // but "124141" and "2015" reached this filter with no letter of their own
+  // and are dropped, even though a human reader might guess they belong to
+  // the same certification family.
+  const resume = await parseGroundingFile(txt("Skills: ISO 27001, 124141, ISO 8981, 2015"), "resume");
+  assert.deepEqual(resume.skills, ["ISO 27001", "ISO 8981"]);
+});
+
+test("stacked list markers on one line are stripped in full, not just the first", async () => {
+  const jd = await parseGroundingFile(txt("1. - Must know Rust\n* 2) Should know Go"), "jd");
+  assert.deepEqual(jd.requirements, ["Must know Rust", "Should know Go"]);
+});
+
 test("selection requires consent and storage is one-time", () => {
   const extracted = { requirements: ["Must know Rust"], skills: ["Rust"], anchors: ["Built a parser"] };
   const selected = { requirements: [0], skills: [], anchors: [0] };

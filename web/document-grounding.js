@@ -115,12 +115,37 @@ function normalizeLines(text) {
     .split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
 
+// Only a real list marker -- a bullet glyph, or digits immediately followed by
+// "." or ")" -- and then whitespace counts as a prefix to strip. A bare
+// leading digit run does not, because that is also how alphanumeric skills
+// spell themselves: "5G" and "3D" are not "5" and "3" with a stray marker in
+// front.
 function clean(line) {
-  return line.replace(/^[-*•\d.)\s]+/, "").slice(0, textLimit).trim();
+  return line.trimStart().replace(/^(?:(?:[-*]|\d+[.)])\s+|•\s*)+/, "").slice(0, textLimit).trim();
 }
 
+// A token with no letter is a number, or nothing but punctuation, wearing a
+// list item's clothes, and neither one is a skill on its own.
+//
+// A letter is what makes a token legible as a named thing: "ISO 27001" and
+// "IEEE 754" keep the org name that scopes their number, "5G" and "3D" carry
+// their own label, and a plain "5" or "27001" or "2015" split off from any
+// of those carries no such scope. parseResume only splits candidates on ","
+// / ";" / "|", so a bare number always comes from the source listing several
+// values after one shared prefix -- "Skills: ISO 27001, 124141, 2015" -- and
+// once split, there is no way left to tell whether "124141" or "2015" is
+// still part of that standard, a separate one, or an unrelated year. Rather
+// than guess, every letterless token is dropped except the one shape that
+// has no such ambiguity: a digit paired with "/" or "%" ("24/7", "100%"),
+// which reads as a ratio or a percentage and nothing else. That also drops
+// "3.14", "802.11", "-50", "(3.14)", "1-2", and "2020-2024" -- none of them
+// carry a letter, so none of them get to claim a meaning others would have
+// to guess at.
 function unique(values, max) {
-  return [...new Set(values.map(clean).filter((value) => value.length >= 2))].slice(0, max);
+  return [...new Set(values.map(clean).filter((value) => {
+    if (/\p{L}/u.test(value)) return true;
+    return /\p{N}/u.test(value) && /[/%]/.test(value);
+  }))].slice(0, max);
 }
 
 function parseJd(lines) {
