@@ -11,7 +11,7 @@
   "coverage_complete": true,
   "unmeasured_commits": [],
   "required": true,
-  "status": "pending",
+  "status": "complete",
   "schema_version": 1,
   "change_id": "I981fb4638856bc2a9a4e07fde1035b311c424a32",
   "workbench_started": true
